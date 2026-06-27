@@ -1,0 +1,936 @@
+{
+  "name": "Github PR Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🤖 Local GitHub AI Code Reviewer\n**What this workflow does:**\nWhen a Pull Request is opened or updated, it fetches the full code diff, sends it to your local Ollama instance for expert analysis, and posts the structured review as a comment directly on the PR thread.\n\n**Trigger Events:** PR `opened` + `synchronize`\n\n**Execution Flow:**\n`GitHub Webhook` → `Filter Action` → `Fetch PR Files` → `Format Diff` → `Ollama Review Agent` → `Post Comment`\n\n**Before activating:** Follow the orange Webhook Setup note and add your GitHub PAT.",
+        "height": 300,
+        "width": 440,
+        "color": 7
+      },
+      "id": "136542df-1487-495f-9b80-2f8da9fab150",
+      "name": "📋 Workflow Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ⚙️ GitHub Webhook Configuration\n1. Go to your repo → **Settings → Webhooks → Add webhook**\n2. **Payload URL:** Copy the *Production URL* from the webhook node\n3. **Content type:** `application/json`\n4. **Which events?** → Select individual events → ✅ **Pull requests**\n\n> ℹ️ Only `opened` and `synchronize` actions are processed.",
+        "height": 240,
+        "width": 400,
+        "color": 3
+      },
+      "id": "288863f5-6484-451d-b959-dc6e23d8a1a1",
+      "name": "⚙️ Webhook Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        464,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 🔑 Required Credentials\n**1. GitHub Personal Access Token**\n→ Replace `placeholder_github_pat` in:\n  - *Fetch PR Files from GitHub*\n  - *Post Review Comment on PR*\n\n**2. Local Ollama Server**\n→ Make sure Ollama is running in your Terminal with:\n`OLLAMA_HOST=0.0.0.0 ollama serve`",
+        "height": 240,
+        "width": 400,
+        "color": 5
+      },
+      "id": "9dd38ccb-2faf-44ae-bf98-1a7b5a2a5294",
+      "name": "🔑 Credentials Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        912,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-pr-review",
+        "options": {}
+      },
+      "id": "023cf65a-9b6e-4416-859b-baf055481fd3",
+      "name": "GitHub PR Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        512
+      ],
+      "webhookId": "pr-review-wh-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-opened",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "opened",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-synchronize",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "synchronize",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "bf0b43e7-f5d1-4aeb-9e7d-b014e1034ea7",
+      "name": "Filter: PR Opened or Updated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.body.repository.full_name }}/pulls/{{ $json.body.number }}/files?per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer placeholder_github_pat"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "6f844c97-7986-4bb3-b7f2-eba5ce9dd399",
+      "name": "Fetch PR Files from GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        688,
+        368
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "FWnRSNWcE4udURMM",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "3c15bee7-ca72-4416-a82a-394f3dde3cdc",
+      "name": "Event Ignored",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nconst webhookBody = $('GitHub PR Webhook').first().json.body;\nconst pr = webhookBody.pull_request;\nconst repo = webhookBody.repository;\n\nlet files = [];\nconst firstJson = allItems[0]?.json;\n\nif (Array.isArray(firstJson)) {\n  files = firstJson;\n} else if (allItems.length > 1) {\n  files = allItems.map(i => i.json);\n} else if (firstJson && 'filename' in firstJson) {\n  files = [firstJson];\n}\n\nlet diffContent = '## Pull Request: ' + (pr?.title || 'N/A') + '\\n';\ndiffContent += '**Repo:** ' + repo.full_name + ' | **PR #' + webhookBody.number + '**\\n\\n';\n\nfor (const file of files) {\n  diffContent += '#### File: ' + file.filename + '\\n';\n  if (file.patch) {\n    diffContent += '```diff\\n' + file.patch + '\\n```\\n\\n';\n  }\n}\n\nreturn [{\n  json: {\n    diffContent,\n    prNumber: webhookBody.number,\n    commentsApiUrl: 'https://api.github.com/repos/' + repo.full_name + '/issues/' + webhookBody.number + '/comments'\n  }\n}];"
+      },
+      "id": "5aafe156-4c2f-4df2-8112-57c1b72c3aeb",
+      "name": "Format Diff for Ollama",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.diffContent }}",
+        "options": {}
+      },
+      "id": "21455f58-e5f1-4b04-85e7-0472fbee89e7",
+      "name": "Ollama Review Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        1152,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Format Diff for Ollama').item.json.commentsApiUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer placeholder_github_pat"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ body: '### 🤖 Local AI Code Review\\n\\n' + $json.output }) }}",
+        "options": {}
+      },
+      "id": "815dd118-4c17-479a-874d-e6ba6ff62be5",
+      "name": "Post Review Comment on PR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        368
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "FWnRSNWcE4udURMM",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        576
+      ],
+      "id": "f8dcd722-5edd-4e6f-8687-1799edb26694",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "Ui9yIPy8Cqb0KEqe",
+          "name": "Ollama account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "GitHub PR Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "defined-agree-fee-recommend.trycloudflare.com",
+            "user-agent": "GitHub-Hookshot/7621ddc",
+            "content-length": "23147",
+            "accept": "*/*",
+            "accept-encoding": "gzip",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "140.82.115.123",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "a121b92d9b3a6392-NRT",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-warp-tag-id": "0e193022-db2d-4680-a236-d231713be3ca",
+            "cf-worker": "trycloudflare.com",
+            "connection": "keep-alive",
+            "content-type": "application/json",
+            "x-forwarded-for": "140.82.115.123",
+            "x-forwarded-proto": "https",
+            "x-github-delivery": "c11fdd60-71e0-11f1-8189-9b1cdd98a135",
+            "x-github-event": "pull_request",
+            "x-github-hook-id": "646885537",
+            "x-github-hook-installation-target-id": "1250373054",
+            "x-github-hook-installation-target-type": "repository"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "action": "opened",
+            "number": 3,
+            "pull_request": {
+              "url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/3",
+              "id": 3946320046,
+              "node_id": "PR_kwDOSoctvs7rOBCu",
+              "html_url": "https://github.com/luxmoncoeur/pharmacy-api/pull/3",
+              "diff_url": "https://github.com/luxmoncoeur/pharmacy-api/pull/3.diff",
+              "patch_url": "https://github.com/luxmoncoeur/pharmacy-api/pull/3.patch",
+              "issue_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/3",
+              "number": 3,
+              "state": "open",
+              "locked": false,
+              "title": "Update README with note on custom endpoint",
+              "user": {
+                "login": "luxmoncoeur",
+                "id": 175690167,
+                "node_id": "U_kgDOCnjRtw",
+                "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/luxmoncoeur",
+                "html_url": "https://github.com/luxmoncoeur",
+                "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+                "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+                "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+                "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+                "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+                "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+                "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+                "type": "User",
+                "user_view_type": "public",
+                "site_admin": false
+              },
+              "body": "Added note about upcoming custom endpoint.",
+              "created_at": "2026-06-27T04:29:14Z",
+              "updated_at": "2026-06-27T04:29:14Z",
+              "closed_at": null,
+              "merged_at": null,
+              "merge_commit_sha": null,
+              "assignees": [],
+              "requested_reviewers": [],
+              "requested_teams": [],
+              "labels": [],
+              "milestone": null,
+              "draft": false,
+              "commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/3/commits",
+              "review_comments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/3/comments",
+              "review_comment_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/comments{/number}",
+              "comments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/3/comments",
+              "statuses_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/statuses/0580ccdfa7f23d50e52c3e030e34d70062cb4733",
+              "head": {
+                "label": "luxmoncoeur:luxmoncoeur-patch-1",
+                "ref": "luxmoncoeur-patch-1",
+                "sha": "0580ccdfa7f23d50e52c3e030e34d70062cb4733",
+                "user": {
+                  "login": "luxmoncoeur",
+                  "id": 175690167,
+                  "node_id": "U_kgDOCnjRtw",
+                  "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+                  "gravatar_id": "",
+                  "url": "https://api.github.com/users/luxmoncoeur",
+                  "html_url": "https://github.com/luxmoncoeur",
+                  "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+                  "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+                  "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+                  "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+                  "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+                  "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+                  "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+                  "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+                  "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+                  "type": "User",
+                  "user_view_type": "public",
+                  "site_admin": false
+                },
+                "repo": {
+                  "id": 1250373054,
+                  "node_id": "R_kgDOSoctvg",
+                  "name": "pharmacy-api",
+                  "full_name": "luxmoncoeur/pharmacy-api",
+                  "private": true,
+                  "owner": {
+                    "login": "luxmoncoeur",
+                    "id": 175690167,
+                    "node_id": "U_kgDOCnjRtw",
+                    "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+                    "gravatar_id": "",
+                    "url": "https://api.github.com/users/luxmoncoeur",
+                    "html_url": "https://github.com/luxmoncoeur",
+                    "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+                    "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+                    "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+                    "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+                    "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+                    "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+                    "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+                    "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+                    "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+                    "type": "User",
+                    "user_view_type": "public",
+                    "site_admin": false
+                  },
+                  "html_url": "https://github.com/luxmoncoeur/pharmacy-api",
+                  "description": "Simple Pharmacy API System",
+                  "fork": false,
+                  "url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api",
+                  "forks_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/forks",
+                  "keys_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/keys{/key_id}",
+                  "collaborators_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/collaborators{/collaborator}",
+                  "teams_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/teams",
+                  "hooks_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/hooks",
+                  "issue_events_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/events{/number}",
+                  "events_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/events",
+                  "assignees_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/assignees{/user}",
+                  "branches_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/branches{/branch}",
+                  "tags_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/tags",
+                  "blobs_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/blobs{/sha}",
+                  "git_tags_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/tags{/sha}",
+                  "git_refs_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/refs{/sha}",
+                  "trees_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/trees{/sha}",
+                  "statuses_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/statuses/{sha}",
+                  "languages_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/languages",
+                  "stargazers_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/stargazers",
+                  "contributors_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contributors",
+                  "subscribers_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/subscribers",
+                  "subscription_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/subscription",
+                  "commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/commits{/sha}",
+                  "git_commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/commits{/sha}",
+                  "comments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/comments{/number}",
+                  "issue_comment_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/comments{/number}",
+                  "contents_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contents/{+path}",
+                  "compare_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/compare/{base}...{head}",
+                  "merges_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/merges",
+                  "archive_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/{archive_format}{/ref}",
+                  "downloads_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/downloads",
+                  "issues_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues{/number}",
+                  "pulls_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls{/number}",
+                  "milestones_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/milestones{/number}",
+                  "notifications_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/notifications{?since,all,participating}",
+                  "labels_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/labels{/name}",
+                  "releases_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/releases{/id}",
+                  "deployments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/deployments",
+                  "created_at": "2026-05-26T15:07:47Z",
+                  "updated_at": "2026-05-29T13:32:23Z",
+                  "pushed_at": "2026-06-27T04:28:50Z",
+                  "git_url": "git://github.com/luxmoncoeur/pharmacy-api.git",
+                  "ssh_url": "git@github.com:luxmoncoeur/pharmacy-api.git",
+                  "clone_url": "https://github.com/luxmoncoeur/pharmacy-api.git",
+                  "svn_url": "https://github.com/luxmoncoeur/pharmacy-api",
+                  "homepage": "",
+                  "size": 27,
+                  "stargazers_count": 0,
+                  "watchers_count": 0,
+                  "language": "JavaScript",
+                  "has_issues": true,
+                  "has_projects": true,
+                  "has_downloads": true,
+                  "has_wiki": true,
+                  "has_pages": false,
+                  "has_discussions": false,
+                  "forks_count": 0,
+                  "mirror_url": null,
+                  "archived": false,
+                  "disabled": false,
+                  "open_issues_count": 1,
+                  "license": null,
+                  "allow_forking": true,
+                  "is_template": false,
+                  "web_commit_signoff_required": false,
+                  "has_pull_requests": true,
+                  "pull_request_creation_policy": "all",
+                  "topics": [
+                    "api",
+                    "express",
+                    "javascript"
+                  ],
+                  "visibility": "private",
+                  "forks": 0,
+                  "open_issues": 1,
+                  "watchers": 0,
+                  "default_branch": "main",
+                  "allow_squash_merge": true,
+                  "allow_merge_commit": true,
+                  "allow_rebase_merge": true,
+                  "allow_auto_merge": false,
+                  "delete_branch_on_merge": false,
+                  "allow_update_branch": false,
+                  "use_squash_pr_title_as_default": false,
+                  "squash_merge_commit_message": "COMMIT_MESSAGES",
+                  "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+                  "merge_commit_message": "PR_TITLE",
+                  "merge_commit_title": "MERGE_MESSAGE"
+                }
+              },
+              "base": {
+                "label": "luxmoncoeur:main",
+                "ref": "main",
+                "sha": "848d5a6fcdcfd7c356293dfa802e8345440fcc65",
+                "user": {
+                  "login": "luxmoncoeur",
+                  "id": 175690167,
+                  "node_id": "U_kgDOCnjRtw",
+                  "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+                  "gravatar_id": "",
+                  "url": "https://api.github.com/users/luxmoncoeur",
+                  "html_url": "https://github.com/luxmoncoeur",
+                  "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+                  "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+                  "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+                  "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+                  "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+                  "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+                  "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+                  "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+                  "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+                  "type": "User",
+                  "user_view_type": "public",
+                  "site_admin": false
+                },
+                "repo": {
+                  "id": 1250373054,
+                  "node_id": "R_kgDOSoctvg",
+                  "name": "pharmacy-api",
+                  "full_name": "luxmoncoeur/pharmacy-api",
+                  "private": true,
+                  "owner": {
+                    "login": "luxmoncoeur",
+                    "id": 175690167,
+                    "node_id": "U_kgDOCnjRtw",
+                    "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+                    "gravatar_id": "",
+                    "url": "https://api.github.com/users/luxmoncoeur",
+                    "html_url": "https://github.com/luxmoncoeur",
+                    "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+                    "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+                    "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+                    "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+                    "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+                    "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+                    "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+                    "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+                    "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+                    "type": "User",
+                    "user_view_type": "public",
+                    "site_admin": false
+                  },
+                  "html_url": "https://github.com/luxmoncoeur/pharmacy-api",
+                  "description": "Simple Pharmacy API System",
+                  "fork": false,
+                  "url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api",
+                  "forks_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/forks",
+                  "keys_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/keys{/key_id}",
+                  "collaborators_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/collaborators{/collaborator}",
+                  "teams_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/teams",
+                  "hooks_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/hooks",
+                  "issue_events_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/events{/number}",
+                  "events_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/events",
+                  "assignees_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/assignees{/user}",
+                  "branches_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/branches{/branch}",
+                  "tags_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/tags",
+                  "blobs_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/blobs{/sha}",
+                  "git_tags_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/tags{/sha}",
+                  "git_refs_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/refs{/sha}",
+                  "trees_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/trees{/sha}",
+                  "statuses_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/statuses/{sha}",
+                  "languages_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/languages",
+                  "stargazers_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/stargazers",
+                  "contributors_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contributors",
+                  "subscribers_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/subscribers",
+                  "subscription_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/subscription",
+                  "commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/commits{/sha}",
+                  "git_commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/commits{/sha}",
+                  "comments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/comments{/number}",
+                  "issue_comment_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/comments{/number}",
+                  "contents_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contents/{+path}",
+                  "compare_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/compare/{base}...{head}",
+                  "merges_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/merges",
+                  "archive_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/{archive_format}{/ref}",
+                  "downloads_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/downloads",
+                  "issues_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues{/number}",
+                  "pulls_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls{/number}",
+                  "milestones_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/milestones{/number}",
+                  "notifications_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/notifications{?since,all,participating}",
+                  "labels_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/labels{/name}",
+                  "releases_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/releases{/id}",
+                  "deployments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/deployments",
+                  "created_at": "2026-05-26T15:07:47Z",
+                  "updated_at": "2026-05-29T13:32:23Z",
+                  "pushed_at": "2026-06-27T04:28:50Z",
+                  "git_url": "git://github.com/luxmoncoeur/pharmacy-api.git",
+                  "ssh_url": "git@github.com:luxmoncoeur/pharmacy-api.git",
+                  "clone_url": "https://github.com/luxmoncoeur/pharmacy-api.git",
+                  "svn_url": "https://github.com/luxmoncoeur/pharmacy-api",
+                  "homepage": "",
+                  "size": 27,
+                  "stargazers_count": 0,
+                  "watchers_count": 0,
+                  "language": "JavaScript",
+                  "has_issues": true,
+                  "has_projects": true,
+                  "has_downloads": true,
+                  "has_wiki": true,
+                  "has_pages": false,
+                  "has_discussions": false,
+                  "forks_count": 0,
+                  "mirror_url": null,
+                  "archived": false,
+                  "disabled": false,
+                  "open_issues_count": 1,
+                  "license": null,
+                  "allow_forking": true,
+                  "is_template": false,
+                  "web_commit_signoff_required": false,
+                  "has_pull_requests": true,
+                  "pull_request_creation_policy": "all",
+                  "topics": [
+                    "api",
+                    "express",
+                    "javascript"
+                  ],
+                  "visibility": "private",
+                  "forks": 0,
+                  "open_issues": 1,
+                  "watchers": 0,
+                  "default_branch": "main",
+                  "allow_squash_merge": true,
+                  "allow_merge_commit": true,
+                  "allow_rebase_merge": true,
+                  "allow_auto_merge": false,
+                  "delete_branch_on_merge": false,
+                  "allow_update_branch": false,
+                  "use_squash_pr_title_as_default": false,
+                  "squash_merge_commit_message": "COMMIT_MESSAGES",
+                  "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+                  "merge_commit_message": "PR_TITLE",
+                  "merge_commit_title": "MERGE_MESSAGE"
+                }
+              },
+              "_links": {
+                "self": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/3"
+                },
+                "html": {
+                  "href": "https://github.com/luxmoncoeur/pharmacy-api/pull/3"
+                },
+                "issue": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/3"
+                },
+                "comments": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/3/comments"
+                },
+                "review_comments": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/3/comments"
+                },
+                "review_comment": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/comments{/number}"
+                },
+                "commits": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls/3/commits"
+                },
+                "statuses": {
+                  "href": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/statuses/0580ccdfa7f23d50e52c3e030e34d70062cb4733"
+                }
+              },
+              "author_association": "OWNER",
+              "auto_merge": null,
+              "assignee": null,
+              "active_lock_reason": null,
+              "merged": false,
+              "mergeable": null,
+              "rebaseable": null,
+              "mergeable_state": "unknown",
+              "merged_by": null,
+              "comments": 0,
+              "review_comments": 0,
+              "maintainer_can_modify": false,
+              "commits": 1,
+              "additions": 2,
+              "deletions": 0,
+              "changed_files": 1
+            },
+            "repository": {
+              "id": 1250373054,
+              "node_id": "R_kgDOSoctvg",
+              "name": "pharmacy-api",
+              "full_name": "luxmoncoeur/pharmacy-api",
+              "private": true,
+              "owner": {
+                "login": "luxmoncoeur",
+                "id": 175690167,
+                "node_id": "U_kgDOCnjRtw",
+                "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/luxmoncoeur",
+                "html_url": "https://github.com/luxmoncoeur",
+                "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+                "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+                "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+                "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+                "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+                "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+                "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+                "type": "User",
+                "user_view_type": "public",
+                "site_admin": false
+              },
+              "html_url": "https://github.com/luxmoncoeur/pharmacy-api",
+              "description": "Simple Pharmacy API System",
+              "fork": false,
+              "url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api",
+              "forks_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/forks",
+              "keys_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/keys{/key_id}",
+              "collaborators_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/collaborators{/collaborator}",
+              "teams_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/teams",
+              "hooks_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/hooks",
+              "issue_events_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/events{/number}",
+              "events_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/events",
+              "assignees_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/assignees{/user}",
+              "branches_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/branches{/branch}",
+              "tags_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/tags",
+              "blobs_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/blobs{/sha}",
+              "git_tags_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/tags{/sha}",
+              "git_refs_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/refs{/sha}",
+              "trees_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/trees{/sha}",
+              "statuses_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/statuses/{sha}",
+              "languages_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/languages",
+              "stargazers_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/stargazers",
+              "contributors_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contributors",
+              "subscribers_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/subscribers",
+              "subscription_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/subscription",
+              "commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/commits{/sha}",
+              "git_commits_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/git/commits{/sha}",
+              "comments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/comments{/number}",
+              "issue_comment_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/comments{/number}",
+              "contents_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contents/{+path}",
+              "compare_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/compare/{base}...{head}",
+              "merges_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/merges",
+              "archive_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/{archive_format}{/ref}",
+              "downloads_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/downloads",
+              "issues_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues{/number}",
+              "pulls_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/pulls{/number}",
+              "milestones_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/milestones{/number}",
+              "notifications_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/notifications{?since,all,participating}",
+              "labels_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/labels{/name}",
+              "releases_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/releases{/id}",
+              "deployments_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/deployments",
+              "created_at": "2026-05-26T15:07:47Z",
+              "updated_at": "2026-05-29T13:32:23Z",
+              "pushed_at": "2026-06-27T04:28:50Z",
+              "git_url": "git://github.com/luxmoncoeur/pharmacy-api.git",
+              "ssh_url": "git@github.com:luxmoncoeur/pharmacy-api.git",
+              "clone_url": "https://github.com/luxmoncoeur/pharmacy-api.git",
+              "svn_url": "https://github.com/luxmoncoeur/pharmacy-api",
+              "homepage": "",
+              "size": 27,
+              "stargazers_count": 0,
+              "watchers_count": 0,
+              "language": "JavaScript",
+              "has_issues": true,
+              "has_projects": true,
+              "has_downloads": true,
+              "has_wiki": true,
+              "has_pages": false,
+              "has_discussions": false,
+              "forks_count": 0,
+              "mirror_url": null,
+              "archived": false,
+              "disabled": false,
+              "open_issues_count": 1,
+              "license": null,
+              "allow_forking": true,
+              "is_template": false,
+              "web_commit_signoff_required": false,
+              "has_pull_requests": true,
+              "pull_request_creation_policy": "all",
+              "topics": [
+                "api",
+                "express",
+                "javascript"
+              ],
+              "visibility": "private",
+              "forks": 0,
+              "open_issues": 1,
+              "watchers": 0,
+              "default_branch": "main"
+            },
+            "sender": {
+              "login": "luxmoncoeur",
+              "id": 175690167,
+              "node_id": "U_kgDOCnjRtw",
+              "avatar_url": "https://avatars.githubusercontent.com/u/175690167?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/luxmoncoeur",
+              "html_url": "https://github.com/luxmoncoeur",
+              "followers_url": "https://api.github.com/users/luxmoncoeur/followers",
+              "following_url": "https://api.github.com/users/luxmoncoeur/following{/other_user}",
+              "gists_url": "https://api.github.com/users/luxmoncoeur/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/luxmoncoeur/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/luxmoncoeur/subscriptions",
+              "organizations_url": "https://api.github.com/users/luxmoncoeur/orgs",
+              "repos_url": "https://api.github.com/users/luxmoncoeur/repos",
+              "events_url": "https://api.github.com/users/luxmoncoeur/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/luxmoncoeur/received_events",
+              "type": "User",
+              "user_view_type": "public",
+              "site_admin": false
+            }
+          },
+          "webhookUrl": "http://localhost:5678/webhook-test/github-pr-review",
+          "executionMode": "test"
+        }
+      }
+    ],
+    "Fetch PR Files from GitHub": [
+      {
+        "json": {
+          "sha": "c46900ee997ddaec12b49e7f5b45285bdf4f3325",
+          "filename": "README.md",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0,
+          "changes": 2,
+          "blob_url": "https://github.com/luxmoncoeur/pharmacy-api/blob/0580ccdfa7f23d50e52c3e030e34d70062cb4733/README.md",
+          "raw_url": "https://github.com/luxmoncoeur/pharmacy-api/raw/0580ccdfa7f23d50e52c3e030e34d70062cb4733/README.md",
+          "contents_url": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/contents/README.md?ref=0580ccdfa7f23d50e52c3e030e34d70062cb4733",
+          "patch": "@@ -1,3 +1,5 @@\n Pharmacy Management API\n \n A clean, high-performance RESTful API designed for managing a sample Pharmacy Management System. Built using **Node.js**, **Express.js**, and **MySQL2**, this system supports full CRUD operations for managing both medicines and customer profiles.\n+\n+Will add custom endpoint soon."
+        }
+      }
+    ],
+    "Format Diff for Ollama": [
+      {
+        "json": {
+          "diffContent": "## Pull Request: Update README with note on custom endpoint\n**Repo:** luxmoncoeur/pharmacy-api | **PR #3**\n\n#### File: README.md\n```diff\n@@ -1,3 +1,5 @@\n Pharmacy Management API\n \n A clean, high-performance RESTful API designed for managing a sample Pharmacy Management System. Built using **Node.js**, **Express.js**, and **MySQL2**, this system supports full CRUD operations for managing both medicines and customer profiles.\n+\n+Will add custom endpoint soon.\n```\n\n",
+          "prNumber": 3,
+          "commentsApiUrl": "https://api.github.com/repos/luxmoncoeur/pharmacy-api/issues/3/comments"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "Ollama Review Agent": [
+      {
+        "json": {
+          "output": "### Pull Request: Update README with note on custom endpoint\n\n#### Summary\nThis pull request updates the `README.md` file to include a brief note about an upcoming custom endpoint.\n\n---\n\n#### Changes in `README.md`\n```diff\n@@ -1,3 +1,5 @@\n Pharmacy Management API\n \n A clean, high-performance RESTful API designed for managing a sample Pharmacy Management System. Built using **Node.js**, **Express.js**, and **MySQL2**, this system supports full CRUD operations for managing both medicines and customer profiles.\n+\n+Will add custom endpoint soon.\n```\n\n---\n\n#### Rationale\nAdding this note informs users of the repository about an upcoming feature, which can be useful for setting expectations or guiding contributions.\n\n---\n\nFeel free to review the changes and merge if appropriate. Let me know if you need any further information!"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "GitHub PR Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter: PR Opened or Updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter: PR Opened or Updated": {
+      "main": [
+        [
+          {
+            "node": "Fetch PR Files from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Event Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PR Files from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Format Diff for Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Diff for Ollama": {
+      "main": [
+        [
+          {
+            "node": "Ollama Review Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Review Agent": {
+      "main": [
+        [
+          {
+            "node": "Post Review Comment on PR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Ollama Review Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c772d9f8-1cea-432e-ab22-580f56e98fff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "038337fec7fcac657da937064fa1b7fd39ed2cd4b38db44db30d302c1d926b84"
+  },
+  "nodeGroups": [],
+  "id": "JC7X722naiGZR8Hu",
+  "tags": []
+}
