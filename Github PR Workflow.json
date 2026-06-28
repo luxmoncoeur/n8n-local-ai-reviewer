@@ -1,15 +1,15 @@
 {
-  "name": "Github PR Workflow",
+  "name": "GitHub PR Workflow",
   "nodes": [
     {
       "parameters": {
-        "content": "## 🤖 Local GitHub AI Code Reviewer\n**What this workflow does:**\nWhen a Pull Request is opened or updated, it fetches the full code diff, sends it to your local Ollama instance for expert analysis, and posts the structured review as a comment directly on the PR thread.\n\n**Trigger Events:** PR `opened` + `synchronize`\n\n**Execution Flow:**\n`GitHub Webhook` → `Filter Action` → `Fetch PR Files` → `Format Diff` → `Ollama Review Agent` → `Post Comment`\n\n**Before activating:** Follow the orange Webhook Setup note and add your GitHub PAT.",
+        "content": "## Local GitHub AI Code Reviewer\n**What this workflow does:**\nWhen a Pull Request is opened or updated, it fetches the full code diff, sends it to your local Ollama instance for expert analysis, and posts the structured review as a comment directly on the PR thread.\n\n**Trigger Events:** PR `opened` + `synchronize`\n\n**Execution Flow:**\n`GitHub Webhook` → `Filter Action` → `Fetch PR Files` → `Format Diff` → `Ollama Review Agent` → `Post Comment`\n\n**Before activating:** Follow the orange Webhook Setup note and add your GitHub PAT.",
         "height": 300,
         "width": 440,
         "color": 7
       },
       "id": "136542df-1487-495f-9b80-2f8da9fab150",
-      "name": "📋 Workflow Overview",
+      "name": "Workflow Overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,13 +19,13 @@
     },
     {
       "parameters": {
-        "content": "### ⚙️ GitHub Webhook Configuration\n1. Go to your repo → **Settings → Webhooks → Add webhook**\n2. **Payload URL:** Copy the *Production URL* from the webhook node\n3. **Content type:** `application/json`\n4. **Which events?** → Select individual events → ✅ **Pull requests**\n\n> ℹ️ Only `opened` and `synchronize` actions are processed.",
+        "content": "### GitHub Webhook Configuration\n1. Go to your repo → **Settings → Webhooks → Add webhook**\n2. **Payload URL:** Copy the *Production URL* from the webhook node\n3. **Content type:** `application/json`\n4. **Which events?** → Select individual events → ✅ **Pull requests**\n\n> ℹ️ Only `opened` and `synchronize` actions are processed.",
         "height": 240,
         "width": 400,
         "color": 3
       },
       "id": "288863f5-6484-451d-b959-dc6e23d8a1a1",
-      "name": "⚙️ Webhook Setup Guide",
+      "name": "Webhook Setup Guide",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -35,13 +35,13 @@
     },
     {
       "parameters": {
-        "content": "### 🔑 Required Credentials\n**1. GitHub Personal Access Token**\n→ Replace `placeholder_github_pat` in:\n  - *Fetch PR Files from GitHub*\n  - *Post Review Comment on PR*\n\n**2. Local Ollama Server**\n→ Make sure Ollama is running in your Terminal with:\n`OLLAMA_HOST=0.0.0.0 ollama serve`",
+        "content": "### Required Credentials\n**1. GitHub Personal Access Token**\n→ Replace `placeholder_github_pat` in:\n  - *Fetch PR Files from GitHub*\n  - *Post Review Comment on PR*\n\n**2. Local Ollama Server**\n→ Make sure Ollama is running in your Terminal with:\n`OLLAMA_HOST=0.0.0.0 ollama serve`",
         "height": 240,
         "width": 400,
         "color": 5
       },
       "id": "9dd38ccb-2faf-44ae-bf98-1a7b5a2a5294",
-      "name": "🔑 Credentials Guide",
+      "name": "Credentials Guide",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -219,7 +219,7 @@
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ body: '### 🤖 Local AI Code Review\\n\\n' + $json.output }) }}",
+        "body": "={{ JSON.stringify({ body: '### Local AI Code Review\\n\\n' + $json.output }) }}",
         "options": {}
       },
       "id": "815dd118-4c17-479a-874d-e6ba6ff62be5",
